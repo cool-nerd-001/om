@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using OrderMicroservice.DbContexts;
 using OrderMicroservice.Dto;
 using OrderMicroservice.Models;
+using OrderMicroservice.Utils;
+using System.Collections;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -25,12 +27,39 @@ namespace OrderMicroservice.Controllers
         }
 
         [HttpPost("product")]
-        public async Task<IActionResult> PlaceOrder(OrderInformationDto data)
+        public async Task<IActionResult> PlaceOrder(OrderDto data)
         {
 
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
+            }
+
+
+            // Retrieve the JWT token from the Authorization header
+            var authorizationHeader = Request.Headers["Authorization"].ToString();
+            var token = authorizationHeader.Replace("Bearer ", "");
+
+            Helper h = new Helper(_configuration);
+
+            var flag = await h.isAuthorised(token);
+
+            if (!flag)
+            {
+                return Unauthorized();
+            }
+
+            Guid CId = h.getUserId(token);
+
+
+
+
+
+
+            ArrayList ProductIdList = new ArrayList();
+            foreach (var i in data.Orders)
+            {
+                ProductIdList.Add(i.pId);
             }
 
             using (var client = new HttpClient())
@@ -40,11 +69,13 @@ namespace OrderMicroservice.Controllers
                 client.DefaultRequestHeaders.Accept.Clear();
                 client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                HttpResponseMessage response = await client.GetAsync("/api/rest/v1/verify/" + data.PId);
+                
+
+                HttpResponseMessage response = client.PostAsJsonAsync("/api/rest/v1/verify/products", new {array = ProductIdList }).Result;
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return NotFound();
+                    return BadRequest(new {error = "invalid products"});
 
                 }
 
@@ -52,13 +83,7 @@ namespace OrderMicroservice.Controllers
 
 
 
-            PaymentDetailsDto payment_details = new PaymentDetailsDto()
-            {
-                CreditCardNumber = data.CreditCardNumber,
-                ExpiryYear = data.ExpiryYear,
-                Cvv = data.Cvv
 
-            };
 
             using (var client = new HttpClient())
             {
@@ -66,39 +91,59 @@ namespace OrderMicroservice.Controllers
                 client.BaseAddress = new Uri(domin);
                 client.DefaultRequestHeaders.Accept.Clear();
                 client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                var response = client.PostAsJsonAsync("/api/rest/v1/payment", payment_details).Result;
-
+                var response = client.PostAsJsonAsync("/api/rest/v1/payment", data.Payment).Result;
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return BadRequest();
+                    return BadRequest(new {error = "invalid payment details"});
 
                 }
 
             }
 
 
-            Order new_record = new Order()
-            {
-                OrderId = Guid.NewGuid(),
-                CId = data.CId,
-                PId = data.PId,
-                OrderDate = DateTime.Now,
-                OrderAmount = data.Quantity * data.Price
-            };
 
-            await _context.Orders.AddAsync(new_record);
+            foreach(var i in data.Orders)
+            {
+                Order new_record = new Order()
+                {
+                    OrderId = Guid.NewGuid(),
+                    CId = CId,
+                    PId = i.pId,
+                    ProductName = i.name,
+                    quantity = i.quantity,
+                    OrderAmount = i.quantity * i.price,
+                    OrderDate = DateTime.Now,
+                    Address = data.Address
+                    
+                };
+               await _context.Orders.AddAsync(new_record);
+
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new_record);
-
-
+            return Ok();
         }
 
-        [HttpGet("{customerId:guid}")]
-        public async Task<IActionResult> GetOrders([FromRoute] Guid customerId)
+        [HttpGet("items")]
+        public async Task<IActionResult> GetOrders()
         {
-            var records = _context.Orders.Where(x => x.CId == customerId);
+            // Retrieve the JWT token from the Authorization header
+            var authorizationHeader = Request.Headers["Authorization"].ToString();
+            var token = authorizationHeader.Replace("Bearer ", "");
+
+            Helper h = new Helper(_configuration);
+
+            var flag = await h.isAuthorised(token);
+
+            if (!flag)
+            {
+                return Unauthorized();
+            }
+
+            Guid CId = h.getUserId(token);
+            var records = _context.Orders.Where(x => x.CId == CId);
 
             if (!records.Any())
             {
@@ -107,5 +152,9 @@ namespace OrderMicroservice.Controllers
 
             return Ok(new { array = records });
         }
+
+
+
+
     }
 }

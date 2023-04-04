@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrderMicroservice.DbContexts;
 
@@ -11,9 +12,11 @@ using OrderMicroservice.DbContexts;
 namespace OrderMicroservice.Migrations
 {
     [DbContext(typeof(OrderMicroserviceDbContext))]
-    partial class OrderMicroserviceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20230404113014_second-migration")]
+    partial class secondmigration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

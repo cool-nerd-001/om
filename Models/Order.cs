@@ -11,8 +11,16 @@ namespace OrderMicroservice.Models
 
         public Guid PId { get; set; }
 
-        public DateTime OrderDate { get; set; }
+        public string? ProductName { get; set; }
+
+        public int? quantity {get; set; }
 
         public int? OrderAmount { get; set; }
+
+        public DateTime OrderDate { get; set; }
+
+        public string? Address { get; set; }    
+
+
     }
 }
