@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OrderMicroservice.DbContexts;
+using OrderMicroservice.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +16,7 @@ builder.Services.AddDbContext<OrderMicroserviceDbContext>(options => {
         builder.Configuration["ConnectionStrings:OrderMicroserviceDatabase"]);
 });
 
-builder.Services.AddCors();
+builder.Services.AddScoped<IApiService, ApiService>();
 
 var app = builder.Build();
 
@@ -27,11 +28,6 @@ var app = builder.Build();
 //}
 
 app.UseHttpsRedirection();
-
-app.UseCors(opt =>
-{
-    opt.AllowAnyHeader().AllowAnyMethod().AllowCredentials().WithOrigins("http://localhost:3000");
-});
 
 app.UseAuthorization();
 

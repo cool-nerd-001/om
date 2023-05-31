@@ -1,13 +1,8 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Mvc;
 using OrderMicroservice.DbContexts;
 using OrderMicroservice.Dto;
 using OrderMicroservice.Models;
-using OrderMicroservice.Utils;
-using System.Collections;
-using System.Net.Http.Headers;
-using System.Text.Json;
+using OrderMicroservice.Services;
 
 namespace OrderMicroservice.Controllers
 {
@@ -17,13 +12,14 @@ namespace OrderMicroservice.Controllers
     {
 
         private readonly OrderMicroserviceDbContext _context;
-        private readonly IConfiguration _configuration;
+        public readonly IApiService _api;
 
-        public OrderController(OrderMicroserviceDbContext context, IConfiguration configuration)
+        public OrderController(OrderMicroserviceDbContext context, IApiService api)
         {
             _context = context;
-            _configuration = configuration ??
-                    throw new ArgumentNullException(nameof(configuration));
+
+            _api = api ??
+                    throw new ArgumentNullException(nameof(api));
         }
 
         [HttpPost("product")]
@@ -40,69 +36,45 @@ namespace OrderMicroservice.Controllers
             var authorizationHeader = Request.Headers["Authorization"].ToString();
             var token = authorizationHeader.Replace("Bearer ", "");
 
-            Helper h = new Helper(_configuration);
+            HttpResponseMessage authresponse = await _api.isAuthorized(token);
 
-            var flag = await h.isAuthorised(token);
-
-            if (!flag)
+            if (!authresponse.IsSuccessStatusCode)
             {
                 return Unauthorized();
             }
 
-            Guid CId = h.getUserId(token);
+            Guid CId = _api.getUserId(token);
 
 
 
+            //check if products are valid 
+            List<Guid> ProductIdList = new List<Guid>();
 
-
-
-            ArrayList ProductIdList = new ArrayList();
             foreach (var i in data.Orders)
             {
                 ProductIdList.Add(i.pId);
             }
 
-            using (var client = new HttpClient())
+            HttpResponseMessage productresponse = await _api.areValidProducts(ProductIdList);
+
+            if (!productresponse.IsSuccessStatusCode)
             {
-                string? domin = _configuration["ProductMicroservice:domin"];
-                client.BaseAddress = new Uri(domin);
-                client.DefaultRequestHeaders.Accept.Clear();
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-                
-
-                HttpResponseMessage response = client.PostAsJsonAsync("/api/rest/v1/verify/products", new {array = ProductIdList }).Result;
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    return BadRequest(new {error = "invalid products"});
-
-                }
+                return BadRequest(new {error = "invalid products"});
 
             }
 
+           
+            //process the payment 
+            var paymentresponse = await  _api.processPayment(data.Payment);
 
-
-
-
-            using (var client = new HttpClient())
+            if (!paymentresponse.IsSuccessStatusCode)
             {
-                string? domin = _configuration["PaymentMicroservice:domin"];
-                client.BaseAddress = new Uri(domin);
-                client.DefaultRequestHeaders.Accept.Clear();
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                var response = client.PostAsJsonAsync("/api/rest/v1/payment", data.Payment).Result;
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    return BadRequest(new {error = "invalid payment details"});
-
-                }
-
+                return BadRequest(new { error = "invalid payment details" });
             }
+            
 
 
-
+            //add order details to database
             foreach(var i in data.Orders)
             {
                 Order new_record = new Order()
@@ -126,6 +98,8 @@ namespace OrderMicroservice.Controllers
             return Ok();
         }
 
+
+
         [HttpGet("items")]
         public async Task<IActionResult> GetOrders()
         {
@@ -133,17 +107,16 @@ namespace OrderMicroservice.Controllers
             var authorizationHeader = Request.Headers["Authorization"].ToString();
             var token = authorizationHeader.Replace("Bearer ", "");
 
-            Helper h = new Helper(_configuration);
+            HttpResponseMessage response = await _api.isAuthorized(token);
 
-            var flag = await h.isAuthorised(token);
-
-            if (!flag)
+            if (!response.IsSuccessStatusCode)
             {
                 return Unauthorized();
             }
 
-            Guid CId = h.getUserId(token);
-            var records = _context.Orders.Where(x => x.CId == CId);
+            Guid CId = _api.getUserId(token);
+
+            var records = _context.Orders.Where(x => x.CId == CId).OrderByDescending(o => o.OrderDate);
 
             if (!records.Any())
             {
